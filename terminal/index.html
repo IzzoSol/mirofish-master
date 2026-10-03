@@ -275,6 +275,13 @@ tr:hover td { background: var(--bg3); }
     <div class="panel" id="panel-markets">
       <div class="card">
         <div class="card-h">
+          <span class="card-title">📊 PRICE CHART</span>
+          <span style="font-size:10px;color:var(--text2)" id="chart-title">select a market below</span>
+        </div>
+        <div id="chart-wrap" class="chart-wrap"></div>
+      </div>
+      <div class="card">
+        <div class="card-h">
           <span class="card-title">📊 ALL MARKETS</span>
           <div style="display:flex;gap:6px">
             <input type="text" id="market-search" placeholder="Search..." style="width:140px;padding:5px 8px;font-size:11px" oninput="filterMarkets()">
@@ -311,7 +318,7 @@ tr:hover td { background: var(--bg3); }
       <div class="card">
         <div class="card-h">
           <span class="card-title">📊 SWARM PERFORMANCE</span>
-          <span style="font-size:10px;color:var(--text2)">Last 30 days</span>
+          <span style="font-size:10px;color:var(--text2)">Consensus log</span>
         </div>
         <div id="swarm-history" style="font-size:11px;color:var(--text2)">Loading performance data...</div>
       </div>
@@ -344,7 +351,7 @@ tr:hover td { background: var(--bg3); }
         <div class="card-h"><span class="card-title">📊 ADVANCED ANALYTICS</span></div>
         <div id="enhanced-portfolio"></div>
         <div style="margin-top:6px">
-          <div class="card-h" style="font-size:10px;color:var(--text2);margin-bottom:4px">RSI INDICATOR</div>
+          <div class="card-h" style="font-size:10px;color:var(--text2);margin-bottom:4px" id="rsi-title">RSI INDICATOR</div>
           <div id="indicator-chart" class="chart-wrap" style="height:120px"></div>
         </div>
         <div style="margin-top:6px" id="monte-carlo-wrap"></div>
@@ -616,14 +623,14 @@ ADAPTERS.crypto = new (class extends BaseAdapter {
   constructor() { super({key:'crypto',label:'Crypto',icon:'BTC',color:'#ffd700',badgeId:'badge-crypto'}); }
   async fetchMarkets() {
     try {
-      const res = await fetch('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=volume_desc&per_page=30&sparkline=false', { signal: AbortSignal.timeout(8000) });
+      const res = await fetch('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=volume_desc&per_page=30&sparkline=true', { signal: AbortSignal.timeout(8000) });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
       this.setBadge(true);
       return data.filter(c => c && c.current_price).map((c, i) => {
         const price = c.current_price, chg = c.price_change_percentage_24h || 0, dir = chg >= 0;
         const tgt = dir ? price * (1 + Math.abs(chg) * 0.005 + 0.05) : price * (2 - (1 + Math.abs(chg) * 0.005 + 0.05));
-        return { id: 'crypto_' + c.id, symbol: (c.symbol || '').toUpperCase(), imageUrl: c.image || '', question: c.symbol.toUpperCase() + ' ' + (dir ? '>= $' : '<= $') + tgt.toFixed(dir && tgt < 1000 ? 2 : 0) + (i % 3 === 0 ? ' this week?' : i % 3 === 1 ? ' this month?' : ' this quarter?'), category: 'crypto', adapter: 'crypto', yes_price: Math.min(0.95, Math.max(0.05, 0.5 + chg * 0.008)), volume: c.total_volume || 0, liquidity: c.market_cap || 0, change24h: chg, current_price: price };
+        return { id: 'crypto_' + c.id, symbol: (c.symbol || '').toUpperCase(), imageUrl: c.image || '', sparkline: (c.sparkline_in_7d && c.sparkline_in_7d.price) || [], question: c.symbol.toUpperCase() + ' ' + (dir ? '>= $' : '<= $') + tgt.toFixed(dir && tgt < 1000 ? 2 : 0) + (i % 3 === 0 ? ' this week?' : i % 3 === 1 ? ' this month?' : ' this quarter?'), category: 'crypto', adapter: 'crypto', yes_price: Math.min(0.95, Math.max(0.05, 0.5 + chg * 0.008)), volume: c.total_volume || 0, liquidity: c.market_cap || 0, change24h: chg, current_price: price };
       });
     } catch { this.setBadge(false); return ['BTC','ETH','SOL','XRP','ADA','DOT','AVAX','LINK','MATIC','ATOM'].map((s,i) => ({ id: 'crypto_fb_' + i, question: s + ' >= $' + (50 + Math.random() * 200).toFixed(0) + (i % 2 ? ' this week?' : ' this month?'), category: 'crypto', adapter: 'crypto', yes_price: 0.4 + Math.random() * 0.3, volume: Math.floor(1e6 + Math.random() * 1e8), liquidity: Math.floor(1e8 + Math.random() * 1e9), change24h: (Math.random() - 0.5) * 15 })); }
   }
@@ -649,22 +656,27 @@ ADAPTERS.stocks = new (class extends BaseAdapter {
   }
 });
 
-// Solana Adapter (Jupiter Price API)
+// Solana Adapter (DexScreener — real 24h change + token images)
 ADAPTERS.solana = new (class extends BaseAdapter {
   constructor() { super({key:'solana',label:'Solana',icon:'SOL',color:'#00ff88',badgeId:'badge-solana'}); }
   async fetchMarkets() {
     const tokens = [{m:'SOL',a:'So11111111111111111111111111111111111111112'},{m:'BONK',a:'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263'},{m:'WIF',a:'EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm'},{m:'JUP',a:'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN'},{m:'PYTH',a:'HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3'},{m:'JTO',a:'jtojtQpaHkGkvL5gmY8bgRTK6SMwYNkpfB7eT9PxfLq'},{m:'RAY',a:'4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R'},{m:'RENDER',a:'rndrizKT3MK1iimdxRdWabcF7Zg7AR5T4nud4EkHBof'}];
     try {
-      const res = await fetch('https://api.jup.ag/price/v2?ids=' + tokens.map(t => t.a).join(','), { signal: AbortSignal.timeout(5000) });
+      const res = await fetch('https://api.dexscreener.com/latest/dex/tokens/' + tokens.map(t => t.a).join(','), { signal: AbortSignal.timeout(8000) });
       if (!res.ok) throw new Error('HTTP ' + res.status);
-      const data = await res.json(), prices = data.data || {};
+      const data = await res.json(), pairs = data.pairs || [];
+      const best = {};
+      pairs.forEach(p => { if (p.chainId !== 'solana') return; const addr = p.baseToken && p.baseToken.address; if (!addr) return; if (!best[addr] || (p.liquidity?.usd || 0) > (best[addr].liquidity?.usd || 0)) best[addr] = p; });
       this.setBadge(true);
       return tokens.map((t, i) => {
-        const info = prices[t.a], price = info ? parseFloat(info.price) : 0, chg = price > 0 ? (Math.random() - 0.5) * 8 : 0;
-        return { id: 'sol_' + t.m.toLowerCase(), question: t.m + ' ' + (chg >= 0 ? '>= $' : '<= $') + Math.max(0.001, price > 0 ? (chg >= 0 ? price * 1.05 : price * 0.95) : 0.1 + Math.random() * 50).toFixed(t.m === 'SOL' ? 2 : 4) + (i % 2 ? ' this month?' : ' this week?'), category: 'solana', adapter: 'solana', yes_price: Math.min(0.95, Math.max(0.05, 0.5 + chg * 0.01)), volume: Math.floor(1e5 + Math.random() * 1e7), liquidity: Math.floor(1e6 + Math.random() * 1e8), change24h: chg, current_price: price || (0.1 + Math.random() * 100) };
+        const p = best[t.a];
+        if (!p || !p.priceUsd) return this._fb(t, i);
+        const price = parseFloat(p.priceUsd), chg24 = parseFloat((p.priceChange && p.priceChange.h24) || 0);
+        return { id: 'sol_' + t.m.toLowerCase(), symbol: t.m, imageUrl: (p.info && p.info.imageUrl) || '', question: t.m + ' ' + (chg24 >= 0 ? '>= $' : '<= $') + (chg24 >= 0 ? price * 1.05 : price * 0.95).toFixed(t.m === 'SOL' ? 2 : 4) + (i % 2 ? ' this month?' : ' this week?'), category: 'solana', adapter: 'solana', yes_price: Math.min(0.95, Math.max(0.05, 0.5 + chg24 * 0.01)), volume: parseFloat((p.volume && p.volume.h24) || 0), liquidity: parseFloat((p.liquidity && p.liquidity.usd) || 0), change24h: chg24, current_price: price };
       });
-    } catch { this.setBadge(false); return tokens.map((t,i) => ({ id: 'sol_fb_' + i, question: t.m + ' prediction?', category: 'solana', adapter: 'solana', yes_price: 0.4 + Math.random() * 0.3, volume: Math.floor(1e5 + Math.random() * 1e7), liquidity: Math.floor(1e6 + Math.random() * 1e8), change24h: (Math.random() - 0.5) * 12 })); }
+    } catch { this.setBadge(false); return tokens.map((t, i) => this._fb(t, i)); }
   }
+  _fb(t, i) { return { id: 'sol_fb_' + i, question: t.m + ' prediction?', category: 'solana', adapter: 'solana', yes_price: 0.4 + Math.random() * 0.3, volume: Math.floor(1e5 + Math.random() * 1e7), liquidity: Math.floor(1e6 + Math.random() * 1e8), change24h: (Math.random() - 0.5) * 12 }; }
 });
 
 ADAPTERS.dexscreener = new (class extends BaseAdapter {
@@ -737,6 +749,9 @@ async function loadMarkets() {
   checkAlerts();
   updateTicker();
   renderSourceToggles();
+  populateAlertMarkets();
+  if (STATE.signals.length) updateChart(STATE.signals[0].market);
+  updateIndicators();
   if (!STATE.swarmAnchorMarket && STATE.signals.length > 0) STATE.swarmAnchorMarket = STATE.signals[0].market;
 }
 function enrichMarkets() {
@@ -827,17 +842,18 @@ const SWARM_AGENTS = [
   {id:'sage',name:'Sage',icon:'🦉',color:'#ffd700',desc:'Historical patterns',bias:0.05}
 ];
 function generateSwarmVote(m) {
-  const yesP = (m.yes_price || 0.5) * 100, vol = m.volume || 0, chg = m.change24h || 0, sent = m.sentiment?.score || 50;
+  const yesP = (m.yes_price || 0.5) * 100, vol = m.volume || 0, liq = m.liquidity || 0, chg = m.change24h || 0, sent = m.sentiment?.score || 50, fg = STATE.fg || 50;
+  const clamp = v => Math.max(5, Math.min(95, v));
   return SWARM_AGENTS.map(a => {
     let score = 50;
     if (a.id === 'momentum') score = 50 + chg * 5 + a.bias * 30;
     else if (a.id === 'value') score = 50 + (50 - yesP) * 0.5 + a.bias * 30;
     else if (a.id === 'sentinel') score = sent + a.bias * 20;
     else if (a.id === 'volume') score = 50 + Math.log10(vol + 1) * 5 + chg * 3 + a.bias * 20;
-    else if (a.id === 'whale') score = 50 + (Math.random() - 0.5) * 30 + a.bias * 20;
-    else if (a.id === 'fearless') score = 50 + (yesP > 70 ? -20 : yesP < 30 ? 20 : 0) + a.bias * 30;
-    else score = 50 + (Math.sin(Date.now() * 0.0001 + SWARM_AGENTS.indexOf(a)) * 15) + a.bias * 20;
-    score = Math.max(5, Math.min(95, score + (Math.random() - 0.5) * 10));
+    else if (a.id === 'whale') { const turnover = liq > 0 ? vol / liq : 0; score = 50 + (turnover > 1 ? 12 : turnover > 0.3 ? 5 : turnover < 0.05 ? -8 : 0) + a.bias * 20; }
+    else if (a.id === 'fearless') score = fg < 30 ? 68 : fg > 70 ? 34 : 48 + a.bias * 20;
+    else if (a.id === 'sage') score = yesP > 75 ? 38 : yesP < 25 ? 62 : 50 + Math.sign(chg) * 6 + a.bias * 20;
+    score = clamp(score);
     const vote = score > 60 ? 'buy' : score < 40 ? 'sell' : 'hold';
     return {agent: a, score: Math.round(score), vote, confidence: 50 + Math.round(Math.abs(score - 50) * 0.8)};
   });
@@ -860,8 +876,17 @@ function renderSwarm() {
   document.getElementById('swarm-consensus-pct').textContent = Math.round(avg) + '% BUY';
   grid.innerHTML = votes.map(v => '<div class="fish-agent active"><span class="fa-icon">' + v.agent.icon + '</span><span class="fa-name">' + v.agent.name + '</span><span class="fa-vote ' + v.vote + '">' + (v.vote === 'buy' ? '✓ YES' : v.vote === 'sell' ? '✗ NO' : '— HOLD') + '</span><span class="fa-acc">' + v.score + '% | ' + v.confidence + '% conf</span></div>').join('');
   const hist = document.getElementById('swarm-history');
-  const data = Array.from({length:30}, (_, i) => ({date: new Date(Date.now() - (29 - i) * 86400000).toLocaleDateString('en-US',{month:'short',day:'numeric'}), accuracy: Math.round(40 + Math.random() * 35)}));
-  hist.innerHTML = '<div style="display:flex;gap:3px;align-items:end;height:60px;margin-bottom:8px">' + data.map(d => '<div style="flex:1;display:flex;flex-direction:column;align-items:center"><div style="width:100%;height:' + Math.max(8, d.accuracy * 0.6) + 'px;background:' + (d.accuracy > 60 ? 'var(--green)' : d.accuracy > 45 ? 'var(--orange)' : 'var(--red)') + ';border-radius:2px;opacity:0.7"></div><span style="font-size:6px;margin-top:2px;color:var(--text3)">' + d.date + '</span></div>').join('') + '</div>';
+  const nowTs = Date.now();
+  const lastSnap = STATE.swarmHistory[STATE.swarmHistory.length - 1];
+  if (!lastSnap || nowTs - lastSnap.ts > 30 * 60000) {
+    STATE.swarmHistory.push({ ts: nowTs, consensus: Math.round(avg), marketId: m.id });
+    if (STATE.swarmHistory.length > 30) STATE.swarmHistory.shift();
+    saveState();
+  }
+  const snaps = STATE.swarmHistory.slice(-30).map(h => ({ date: new Date(h.ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), consensus: h.consensus }));
+  hist.innerHTML = snaps.length >= 2
+    ? '<div style="display:flex;gap:3px;align-items:end;height:60px;margin-bottom:8px">' + snaps.map(d => '<div style="flex:1;display:flex;flex-direction:column;align-items:center"><div style="width:100%;height:' + Math.max(8, d.consensus * 0.6) + 'px;background:' + (d.consensus > 55 ? 'var(--green)' : d.consensus > 45 ? 'var(--orange)' : 'var(--red)') + ';border-radius:2px;opacity:0.7" title="' + d.consensus + '%"></div><span style="font-size:6px;margin-top:2px;color:var(--text3)">' + d.date + '</span></div>').join('') + '</div><div style="font-size:9px;color:var(--text2)">' + snaps.length + ' real consensus snapshots · new one every 30 min while open</div>'
+    : '<div style="font-size:11px;color:var(--text2)">Collecting real consensus snapshots… next within 30 min</div>';
 }
 
 // ===== MARKETS RENDER =====
@@ -884,6 +909,7 @@ function selectMarket(id) {
   document.querySelectorAll('.market-item').forEach(el => el.classList.remove('selected'));
   const el = document.querySelector('.market-item[onclick*="' + id + '"]');
   if (el) el.classList.add('selected');
+  updateChart(m);
   toast('Selected: ' + (m.question||'').slice(0,40), 'info');
 }
 
@@ -899,9 +925,25 @@ function initChart() {
 }
 function updateChart(market) {
   if (!STATE.chart || !STATE.chartSeries) return;
-  const base = (market?.yes_price || 0.5) * 100, now = Math.floor(Date.now() / 1000);
-  const data = [];
-  for (let i = 120; i >= 0; i--) data.push({time: now - i * 3600, value: Math.max(0.1, Math.min(99.9, base + (Math.random() - 0.5) * 8 * Math.sin(i * 0.15) + (Math.random() - 0.5) * 1.5 + Math.sin(i * 0.05) * 3))});
+  const title = document.getElementById('chart-title');
+  if (title) title.textContent = market ? String(market.symbol || market.question || '').slice(0, 50) + ' — 7d hourly' : 'select a market below';
+  const now = Math.floor(Date.now() / 1000);
+  let data = [];
+  const sp = market && market.sparkline;
+  if (sp && sp.length > 20) {
+    const n = sp.length;
+    data = sp.map((p, i) => ({ time: now - (n - 1 - i) * 3600, value: +p })).filter(d => d.value > 0);
+  } else if (market && market.current_price) {
+    const base = market.current_price, chg = market.change24h || 0;
+    data = Array.from({ length: 121 }, (_, i) => {
+      const drift = 1 - (chg / 100) * ((120 - i) / 120);
+      const wobble = 1 + (Math.sin(i * 0.15) * 0.006 + Math.sin(i * 0.05) * 0.003) * ((120 - i) / 120);
+      return { time: now - (120 - i) * 3600, value: Math.max(0.00000001, base * drift * wobble) };
+    });
+  } else {
+    const base = (market?.yes_price || 0.5) * 100;
+    data = Array.from({ length: 121 }, (_, i) => ({ time: now - (120 - i) * 3600, value: Math.max(0.1, Math.min(99.9, base + (Math.random() - 0.5) * 8 * Math.sin(i * 0.15) + (Math.random() - 0.5) * 1.5 + Math.sin(i * 0.05) * 3)) }));
+  }
   STATE.chartSeries.setData(data);
 }
 
@@ -986,6 +1028,7 @@ async function generateSentiment() {
     fg = { value: parseInt(d.data[0].value), prev: parseInt((d.data[1] && d.data[1].value) || d.data[0].value), label: d.data[0].value_classification };
   } catch {}
   const overall = fg ? fg.value : Math.round(30 + Math.random() * 40);
+  STATE.fg = overall;
   document.getElementById('fg-value').textContent = overall;
   document.getElementById('fg-label').textContent = fg ? fg.label + (fg.value > fg.prev ? ' ↑' : fg.value < fg.prev ? ' ↓' : '') : (overall > 60 ? 'Greed' : overall > 40 ? 'Neutral' : 'Fear');
   document.getElementById('fg-needle').style.left = overall + '%';
@@ -1010,11 +1053,18 @@ async function generateSentiment() {
 }
 
 // ===== ALERTS =====
-function showAddAlert() { const f = document.getElementById('alert-form'); f.style.display = f.style.display === 'none' ? 'block' : 'none'; }
+function populateAlertMarkets() {
+  const sel = document.getElementById('alert-market'); if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">Select market…</option>' + STATE.markets.slice(0, 40).map(m => '<option value="' + m.id + '">' + String(m.question || '').slice(0, 34) + '</option>').join('');
+  if (cur && STATE.markets.some(m => m.id === cur)) sel.value = cur;
+}
+function showAddAlert() { populateAlertMarkets(); const f = document.getElementById('alert-form'); f.style.display = f.style.display === 'none' ? 'block' : 'none'; }
 function addAlert() {
-  const sel = document.getElementById('alert-market'), dir = document.getElementById('alert-direction').value, price = parseFloat(document.getElementById('alert-price').value), idx = parseInt(sel.value);
-  if (isNaN(idx) || isNaN(price)) { toast('Fill all fields', 'error'); return; }
-  STATE.alerts.push({marketIdx: idx, question: 'Alert', direction: dir, price, triggered: false}); saveState(); renderAlerts(); document.getElementById('alert-form').style.display = 'none'; toast('Alert added', 'success');
+  const sel = document.getElementById('alert-market'), dir = document.getElementById('alert-direction').value, price = parseFloat(document.getElementById('alert-price').value);
+  const m = STATE.markets.find(x => x.id === sel.value);
+  if (!m || isNaN(price)) { toast('Fill all fields', 'error'); return; }
+  STATE.alerts.push({marketId: m.id, question: String(m.question || 'Alert').slice(0, 40), direction: dir, price, triggered: false}); saveState(); renderAlerts(); document.getElementById('alert-form').style.display = 'none'; toast('Alert added', 'success');
 }
 function renderAlerts() {
   const el = document.getElementById('alerts-list');
@@ -1023,7 +1073,7 @@ function renderAlerts() {
 }
 function removeAlert(i) { STATE.alerts.splice(i, 1); saveState(); renderAlerts(); }
 function checkAlerts() {
-  STATE.alerts.forEach(a => { if (a.triggered) return; const m = STATE.markets[a.marketIdx]; if (!m) return; const p = ((m.yes_price||0.5)*100); if ((a.direction === 'above' && p >= a.price) || (a.direction === 'below' && p <= a.price)) { a.triggered = true; toast('🔔 Alert: ' + a.direction + ' ' + p.toFixed(1) + '%', 'info'); }});
+  STATE.alerts.forEach(a => { if (a.triggered) return; const m = STATE.markets.find(x => x.id === a.marketId) || STATE.markets[a.marketIdx]; if (!m) return; const p = ((m.yes_price||0.5)*100); if ((a.direction === 'above' && p >= a.price) || (a.direction === 'below' && p <= a.price)) { a.triggered = true; toast('🔔 Alert: ' + (a.question || '') + ' ' + a.direction + ' ' + p.toFixed(1) + '%', 'info'); }});
   saveState();
 }
 
@@ -1115,7 +1165,31 @@ function initIndicatorChart() {
     updateIndicators();
   } catch(e) { console.log('Indicator chart error:', e); }
 }
-function updateIndicators() { if (!STATE.rsiSeries) return; const now = Math.floor(Date.now()/1000); STATE.rsiSeries.setData(Array.from({length:121}, (_,i) => ({time: now - (120-i)*3600, value: 30 + Math.random()*40 + Math.sin(i*0.2)*15}))); }
+function rsiFromPrices(prices, period = 14) {
+  if (!prices || prices.length < period + 2) return null;
+  const rsi = [];
+  let g = 0, l = 0;
+  for (let i = 1; i <= period; i++) { const d = prices[i] - prices[i - 1]; if (d >= 0) g += d; else l -= d; }
+  let ag = g / period, al = l / period;
+  rsi[period] = al === 0 ? 100 : 100 - 100 / (1 + ag / al);
+  for (let i = period + 1; i < prices.length; i++) {
+    const d = prices[i] - prices[i - 1];
+    ag = (ag * (period - 1) + (d > 0 ? d : 0)) / period;
+    al = (al * (period - 1) + (d < 0 ? -d : 0)) / period;
+    rsi[i] = al === 0 ? 100 : 100 - 100 / (1 + ag / al);
+  }
+  return rsi.slice(-121);
+}
+function updateIndicators() {
+  if (!STATE.rsiSeries) return;
+  const m = STATE.markets.find(x => x.sparkline && x.sparkline.length > 20);
+  const rsi = m ? rsiFromPrices(m.sparkline) : null;
+  const t = document.getElementById('rsi-title');
+  if (t) t.textContent = m ? 'RSI — ' + (m.symbol || '?') + ' (7d hourly, live)' : 'RSI INDICATOR (simulated — awaiting data)';
+  const now = Math.floor(Date.now() / 1000);
+  if (rsi && rsi.length) STATE.rsiSeries.setData(rsi.map((v, i) => ({ time: now - (rsi.length - 1 - i) * 3600, value: +v.toFixed(2) })));
+  else STATE.rsiSeries.setData(Array.from({length:121}, (_,i) => ({time: now - (120-i)*3600, value: 30 + Math.random()*40 + Math.sin(i*0.2)*15})));
+}
 
 // ===== PUSH NOTIFICATIONS =====
 async function requestNotifyPermission() { if (!('Notification' in window)) return false; if (Notification.permission === 'granted') return true; return (await Notification.requestPermission()) === 'granted'; }

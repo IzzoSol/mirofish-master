@@ -71,15 +71,15 @@ function analyze(symbol, candles, opts = {}) {
   if (!rsi.length) return signals;
   const last = rsi[rsi.length - 1];
 
-  if (last > o.rsiOverbought) signals.push({ code: 'RSI_HIGH', side: 'sell', strength: Math.min(95, 60 + (last - o.rsiOverbought) * 1.5), text: `${symbol}: RSI ${last.toFixed(1)} overbought` });
-  else if (last < o.rsiOversold) signals.push({ code: 'RSI_LOW', side: 'buy', strength: Math.min(95, 60 + (o.rsiOversold - last) * 1.5), text: `${symbol}: RSI ${last.toFixed(1)} oversold` });
+  if (last > o.rsiOverbought) signals.push({ code: 'RSI_HIGH', side: 'sell', symbol, strength: Math.min(95, 60 + (last - o.rsiOverbought) * 1.5), text: `${symbol}: RSI ${last.toFixed(1)} overbought` });
+  else if (last < o.rsiOversold) signals.push({ code: 'RSI_LOW', side: 'buy', symbol, strength: Math.min(95, 60 + (o.rsiOversold - last) * 1.5), text: `${symbol}: RSI ${last.toFixed(1)} oversold` });
 
   const growth = volumeSpike(candles);
-  if (growth > o.volumeGrowthThreshold) signals.push({ code: 'VOL_SPIKE', side: 'buy', strength: Math.min(92, 55 + growth * 6), text: `${symbol}: volume +${(growth * 100).toFixed(0)}% above 30-bar average` });
+  if (growth > o.volumeGrowthThreshold) signals.push({ code: 'VOL_SPIKE', side: 'buy', symbol, strength: Math.min(92, 55 + growth * 6), text: `${symbol}: volume +${(growth * 100).toFixed(0)}% above 30-bar average` });
 
   const { bull, bear } = divergence(closes, rsi);
-  if (bull >= o.divergenceConfirmations) signals.push({ code: 'BULL_DIV', side: 'buy', strength: 70 + bull * 6, text: `${symbol}: bullish divergence (${bull} window confirmations)` });
-  if (bear >= o.divergenceConfirmations) signals.push({ code: 'BEAR_DIV', side: 'sell', strength: 70 + bear * 6, text: `${symbol}: bearish divergence (${bear} window confirmations)` });
+  if (bull >= o.divergenceConfirmations) signals.push({ code: 'BULL_DIV', side: 'buy', symbol, strength: 70 + bull * 6, text: `${symbol}: bullish divergence (${bull} window confirmations)` });
+  if (bear >= o.divergenceConfirmations) signals.push({ code: 'BEAR_DIV', side: 'sell', symbol, strength: 70 + bear * 6, text: `${symbol}: bearish divergence (${bear} window confirmations)` });
 
   return signals;
 }

@@ -2,6 +2,7 @@ const cfg = require('./config');
 const { Candle, analyze } = require('./ta');
 const rugcheck = require('./rugcheck');
 const { sendTelegram, sendDiscord } = require('./broadcast');
+const paper = require('./paper');
 
 const state = { lastSent: {}, running: false };
 
@@ -44,6 +45,7 @@ function memeSignal(pair) {
   return {
     symbol: pair.baseToken?.symbol || '?', mint: pair.baseToken?.address, pair,
     side: chg >= 0 ? 'buy' : 'sell', strength,
+    price: parseFloat(pair.priceUsd) || 0,
     text: `${pair.baseToken?.symbol}: ${chg >= 0 ? '+' : ''}${chg.toFixed(1)}% 24h, 6h volume ${spike.toFixed(1)}x pace, liq $${Math.round(liq).toLocaleString()}`
   };
 }
@@ -52,7 +54,9 @@ async function runOnce(dryRun) {
   const signals = [];
   const klineResults = await Promise.allSettled(cfg.watch.binance.map(async s => {
     const candles = await fetchKlines(s);
-    return analyze(s.replace('USDT', ''), candles, cfg.ta).filter(x => x.strength >= cfg.signalMinStrength);
+    const sigs = analyze(s.replace('USDT', ''), candles, cfg.ta).filter(x => x.strength >= cfg.signalMinStrength);
+    sigs.forEach(x => { x.price = candles[candles.length - 1].close; });
+    return sigs;
   }));
   for (const r of klineResults) if (r.status === 'fulfilled') signals.push(...r.value);
 
@@ -75,13 +79,17 @@ async function runOnce(dryRun) {
     const last = state.lastSent[s.symbol + s.code] || 0;
     return now - last > 6 * 3600 * 1000;
   });
-  const digest = buildDigest(fresh.slice(0, cfg.digestMaxSignals));
+  const paperSum = await paper.tick(signals).catch(e => { console.error('[paper] tick failed:', e.message); return null; });
+  const digest = buildDigest(fresh.slice(0, cfg.digestMaxSignals), paperSum);
   fresh.slice(0, cfg.digestMaxSignals).forEach(s => { state.lastSent[s.symbol + s.code] = now; });
-  return { digest, sent: fresh.length };
+  return { digest, sent: fresh.length, paper: paperSum };
 }
 
-function buildDigest(signals) {
-  if (!signals.length) return '🐟 MiroFish signals: nothing above threshold this cycle.';
+function buildDigest(signals, paperSum) {
+  if (!signals.length) {
+    const base = '🐟 MiroFish signals: nothing above threshold this cycle.';
+    return paperSum ? base + '\n\n' + paper.digestFooter(paperSum) : base;
+  }
   const lines = ['📡 <b>MIROFISH SIGNALS</b> — ' + new Date().toUTCString().slice(0, 22) + ' UTC', ''];
   for (const s of signals) {
     const tag = s.side === 'buy' ? '🟢 BUY' : s.side === 'sell' ? '🔴 SELL' : '⚠️ AVOID';
@@ -89,7 +97,8 @@ function buildDigest(signals) {
   }
   const rugCards = signals.filter(s => s.rugCard);
   for (const s of rugCards.slice(0, 2)) lines.push('', s.rugCard);
-  lines.push('', `Top ${signals.length} of ${signals.length} qualifying · engine: RSI/volume/divergence + rugcheck gate`);
+  if (paperSum) lines.push('', paper.digestFooter(paperSum));
+  lines.push('', `Top ${signals.length} qualifying · engine: RSI/volume/divergence + rugcheck gate · paper desk: 4% SL / 12% arm / 6% trail`);
   return lines.join('\n');
 }
 

@@ -1,0 +1,13 @@
+{
+  "capital": 200,
+  "positions": [],
+  "closed": [],
+  "stats": {
+    "trades": 0,
+    "wins": 0,
+    "losses": 0,
+    "realized": 0
+  },
+  "dailySpend": 0,
+  "day": "2026-10-03"
+}
