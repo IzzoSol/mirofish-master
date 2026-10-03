@@ -40,11 +40,15 @@ async function fetchPrices(symbols) {
   const memeSet = new Map(cfg.memes.map(m => [m.s, m.a]));
   const binanceSyms = symbols.filter(x => !memeSet.has(x)).map(x => x + 'USDT');
   const memeSyms = symbols.filter(x => memeSet.has(x));
+  const normKey = s => String(s || '').toUpperCase().replace(/^\$/, '');
   if (binanceSyms.length) {
-    try {
-      const res = await fetch('https://api.binance.com/api/v3/ticker/price?symbols=' + JSON.stringify(binanceSyms), { signal: AbortSignal.timeout(8000) });
-      if (res.ok) (await res.json()).forEach(t => { prices[t.symbol.replace(/USDT$/, '')] = parseFloat(t.price); });
-    } catch {}
+    const hosts = ['https://api.binance.com', 'https://data-api.binance.vision'];
+    for (const host of hosts) {
+      try {
+        const res = await fetch(host + '/api/v3/ticker/price?symbols=' + encodeURIComponent(JSON.stringify(binanceSyms)), { signal: AbortSignal.timeout(8000) });
+        if (res.ok) { (await res.json()).forEach(t => { prices[t.symbol.replace(/USDT$/, '')] = parseFloat(t.price); }); break; }
+      } catch {}
+    }
   }
   if (memeSyms.length) {
     try {
@@ -57,9 +61,10 @@ async function fetchPrices(symbols) {
           if (p.chainId !== 'solana') return;
           const sym = p.baseToken && p.baseToken.symbol;
           if (!sym) return;
-          if (!best[sym] || (p.liquidity?.usd || 0) > (best[sym].liquidity?.usd || 0)) best[sym] = p;
+          const key = normKey(sym);
+          if (!best[key] || (p.liquidity?.usd || 0) > (best[key].liquidity?.usd || 0)) best[key] = p;
         });
-        Object.entries(best).forEach(([sym, p]) => { if (p.priceUsd) prices[sym] = parseFloat(p.priceUsd); });
+        Object.entries(best).forEach(([key, p]) => { if (p.priceUsd) prices[key] = parseFloat(p.priceUsd); });
       }
     } catch {}
   }
@@ -73,11 +78,12 @@ async function tick(signals) {
   const prices = await fetchPrices(openSyms);
 
   for (const p of [...s.positions]) {
-    const price = prices[p.symbol];
-    if (!price) continue;
-    const r = applyRules(p, price);
+    const rawPrice = prices[p.symbol];
+    if (!rawPrice) continue;
+    const r = applyRules(p, rawPrice);
     if (r.close) {
-      const pnl = closePosition(s, p, price, r.reason);
+      const exitPrice = rawPrice * (1 - cfg.strategy.simulateSlippage);
+      const pnl = closePosition(s, p, exitPrice, r.reason);
       console.log(`[paper] CLOSED ${p.symbol} (${r.reason}) roi ${r.roi.toFixed(2)}% pnl $${pnl.toFixed(2)} capital $${s.capital.toFixed(2)}`);
     }
   }
@@ -88,7 +94,7 @@ async function tick(signals) {
     if (s.positions.some(p => p.symbol === b.symbol)) continue;
     const size = Math.min(cfg.strategy.maxPerTradeUsd, s.capital * cfg.strategy.positionSizePct / 100, cfg.risk.dailyBudgetUsd - s.dailySpend);
     if (size < 1) break;
-    s.positions.push({ id: 'pos_' + Date.now() + '_' + b.symbol, symbol: b.symbol, source: b.code || 'meme', entry: b.price, size: +size.toFixed(2), hwm: b.price, openedAt: new Date().toISOString() });
+    s.positions.push({ id: 'pos_' + Date.now() + '_' + b.symbol, symbol: b.symbol, source: b.code || 'meme', entry: b.price * (1 + cfg.strategy.simulateSlippage), size: +size.toFixed(2), hwm: b.price, openedAt: new Date().toISOString() });
     s.dailySpend += size;
     console.log(`[paper] OPENED ${b.symbol} @ ${b.price} size $${size.toFixed(2)} (${b.code || 'meme'}, ${b.strength}%)`);
   }

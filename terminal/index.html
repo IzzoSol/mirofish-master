@@ -712,7 +712,7 @@ ADAPTERS.dexscreener = new (class extends BaseAdapter {
       return memecoins.map((t, i) => {
         const p = bestPairs[t.a];
         if (!p || !p.priceUsd) {
-          return { id: 'dex_fb_' + i, question: t.s + ' ' + (Math.random() > 0.5 ? 'moon?' : 'dump?'), category: 'memecoins', adapter: 'dexscreener', yes_price: 0.5, volume: Math.floor(1e5 + Math.random() * 1e6), liquidity: Math.floor(1e4 + Math.random() * 5e5), change24h: (Math.random() - 0.5) * 30 };
+          return { id: 'dex_fb_' + i, symbol: t.s, imageUrl: '', question: t.s + ' ' + (Math.random() > 0.5 ? 'moon?' : 'dump?'), category: 'memecoins', adapter: 'dexscreener', yes_price: 0.5, volume: Math.floor(1e5 + Math.random() * 1e6), liquidity: Math.floor(1e4 + Math.random() * 5e5), change24h: (Math.random() - 0.5) * 30 };
         }
         const price = parseFloat(p.priceUsd);
         const vol = parseFloat(p.volume?.h24 || 0);
@@ -730,7 +730,7 @@ ADAPTERS.dexscreener = new (class extends BaseAdapter {
       });
     } catch {
       this.setBadge(false);
-      return memecoins.map((t,i) => ({ id:'dex_fb_'+i, question:t.s+' '+(Math.random()>0.5?'pump?':'dump?'), category:'memecoins', adapter:'dexscreener', yes_price:0.4+Math.random()*0.3, volume:Math.floor(1e5+Math.random()*1e6), liquidity:Math.floor(1e4+Math.random()*5e5), change24h:(Math.random()-0.5)*30 }));
+      return memecoins.map((t,i) => ({ id:'dex_fb_'+i, symbol:t.s, imageUrl:'', question:t.s+' '+(Math.random()>0.5?'pump?':'dump?'), category:'memecoins', adapter:'dexscreener', yes_price:0.4+Math.random()*0.3, volume:Math.floor(1e5+Math.random()*1e6), liquidity:Math.floor(1e4+Math.random()*5e5), change24h:(Math.random()-0.5)*30 }));
     }
   }
 });
@@ -756,7 +756,10 @@ async function loadMarkets() {
 }
 function enrichMarkets() {
   STATE.markets.forEach(m => {
-    m.sentiment = { score: 20 + Math.random() * 60, trend: ['up','down','flat'][Math.floor(Math.random()*3)], bullish: 20 + Math.random() * 50, bearish: 5 + Math.random() * 25, neutral: 10 + Math.random() * 30 };
+    const chg = m.change24h || 0, vol = m.volume || 0, liq = m.liquidity || 0;
+    const turnover = liq > 0 ? vol / liq : 0;
+    const score = Math.max(5, Math.min(95, 50 + chg * 3.5 + (turnover > 0.5 ? 8 : turnover > 0.2 ? 4 : 0)));
+    m.sentiment = { score, trend: score > 55 ? 'up' : score < 45 ? 'down' : 'flat' };
     m.signal = computeSignal(m);
   });
 }
@@ -826,7 +829,15 @@ function renderSignals() {
       + '<button class="btn btn-sm ' + (cls === 'buy' ? 'btn-green' : cls === 'sell' ? 'btn-red' : 'btn-orange') + '" onclick="event.stopPropagation();executeTrade(\'' + m.id + '\',\'' + sg.type + '\')" style="padding:3px 10px;font-size:9px">TRADE</button></div></div>';
   }).join('');
 }
-function selectSignalMarket(id) { const m = STATE.markets.find(x => x.id === id); if (m) toast('Selected: ' + (m.question||'').slice(0,40) + '...', 'info'); }
+function selectSignalMarket(id) {
+  const m = STATE.markets.find(x => x.id === id); if (!m) return;
+  goPanel('markets');
+  updateChart(m);
+  document.querySelectorAll('.market-item').forEach(el => el.classList.remove('selected'));
+  const el = document.querySelector('.market-item[onclick*="' + id + '"]');
+  if (el) el.classList.add('selected');
+  toast('Charted: ' + (m.question||'').slice(0,40), 'info');
+}
 function quickFilter(t, btn) { STATE.currentTab = t; document.querySelectorAll('.qa-row .qa-btn').forEach(b => b.classList.remove('active')); if (btn) btn.classList.add('active'); renderSignals(); }
 function filterSource(src, btn) { STATE.currentSource = src; document.querySelectorAll('[onclick*="filterSource"]').forEach(b => b.classList.remove('active')); if (btn) btn.classList.add('active'); renderSignals(); }
 function sortSignals(t) { STATE.signalSort = t; renderSignals(); }
@@ -914,12 +925,17 @@ function selectMarket(id) {
 }
 
 // ===== CHART =====
+function chartColors() {
+  const light = document.documentElement.getAttribute('data-theme') === 'light';
+  return { bg: light ? '#ffffff' : '#0a0e17', text: light ? '#475569' : '#64748b', grid: light ? '#e2e8f0' : '#1a2332', border: light ? '#cbd5e1' : '#1e3a5f' };
+}
 function initChart() {
   if (typeof LightweightCharts === 'undefined') return;
   try {
     const wrap = document.getElementById('chart-wrap'); if (!wrap) return;
-    STATE.chart = LightweightCharts.createChart(wrap, {layout:{background:{type:'solid',color:'#0a0e17'},textColor:'#64748b'},grid:{vertLines:{color:'#1a2332'},horzLines:{color:'#1a2332'}},crosshair:{mode:LightweightCharts.CrosshairMode.Normal},rightPriceScale:{borderColor:'#1e3a5f'},timeScale:{borderColor:'#1e3a5f',timeVisible:true,secondsVisible:false},width:wrap.clientWidth||600,height:250});
-    STATE.chartSeries = STATE.chart.addLineSeries({color:'#00d4ff',lineWidth:2,crosshairMarkerVisible:true,priceFormat:{type:'price',precision:1,minMove:0.1}});
+    const cc = chartColors();
+    STATE.chart = LightweightCharts.createChart(wrap, {layout:{background:{type:'solid',color:cc.bg},textColor:cc.text},grid:{vertLines:{color:cc.grid},horzLines:{color:cc.grid}},crosshair:{mode:LightweightCharts.CrosshairMode.Normal},rightPriceScale:{borderColor:cc.border},timeScale:{borderColor:cc.border,timeVisible:true,secondsVisible:false},width:wrap.clientWidth||600,height:250});
+    STATE.chartSeries = STATE.chart.addLineSeries({color:'#00d4ff',lineWidth:2,crosshairMarkerVisible:true,priceFormat:{type:'price',precision:2,minMove:0.01}});
     window.addEventListener('resize', () => { if (STATE.chart) STATE.chart.resize((document.getElementById('chart-wrap')?.clientWidth||600), 250); });
   } catch(e) { console.log('Chart error:', e); }
 }
@@ -943,6 +959,11 @@ function updateChart(market) {
   } else {
     const base = (market?.yes_price || 0.5) * 100;
     data = Array.from({ length: 121 }, (_, i) => ({ time: now - (120 - i) * 3600, value: Math.max(0.1, Math.min(99.9, base + (Math.random() - 0.5) * 8 * Math.sin(i * 0.15) + (Math.random() - 0.5) * 1.5 + Math.sin(i * 0.05) * 3)) }));
+  }
+  if (STATE.chartSeries && data.length) {
+    const lastV = data[data.length - 1].value;
+    const prec = lastV < 0.000001 ? 10 : lastV < 0.001 ? 8 : lastV < 0.1 ? 6 : lastV < 10 ? 4 : lastV < 1000 ? 2 : 1;
+    STATE.chartSeries.applyOptions({ priceFormat: { type: 'price', precision: prec, minMove: Math.pow(10, -prec) } });
   }
   STATE.chartSeries.setData(data);
 }
@@ -1032,7 +1053,9 @@ async function generateSentiment() {
   document.getElementById('fg-value').textContent = overall;
   document.getElementById('fg-label').textContent = fg ? fg.label + (fg.value > fg.prev ? ' ↑' : fg.value < fg.prev ? ' ↓' : '') : (overall > 60 ? 'Greed' : overall > 40 ? 'Neutral' : 'Fear');
   document.getElementById('fg-needle').style.left = overall + '%';
-  const cats = [{id:'polymarket',name:'Polymarket',emoji:'📊'},{id:'crypto',name:'Crypto',emoji:'₿'},{id:'stocks',name:'Stocks',emoji:'📈'},{id:'solana',name:'Solana',emoji:'◎'},{id:'dexscreener',name:'Memecoins',emoji:'🌮'}];
+  const allCats = [{id:'polymarket',name:'Polymarket',emoji:'📊'},{id:'crypto',name:'Crypto',emoji:'₿'},{id:'stocks',name:'Stocks',emoji:'📈'},{id:'solana',name:'Solana',emoji:'◎'},{id:'dexscreener',name:'Memecoins',emoji:'🌮'}];
+  const cats = allCats.filter(c => STATE.settings.sources[c.id] !== false);
+  const nCat = cats.length || 1;
   const grid = document.getElementById('sentiment-grid'); let tb = 0, tn = 0, tbe = 0;
   grid.innerHTML = cats.map(c => {
     const group = STATE.markets.filter(m => m.adapter === c.id);
@@ -1048,7 +1071,7 @@ async function generateSentiment() {
     tb += bu; tn += ne; tbe += be;
     return '<div class="sent-card"><span class="sc-emoji">' + c.emoji + '</span><span class="sc-name">' + c.name + '</span><div class="sc-score" style="color:' + (sc > 55 ? 'var(--green)' : sc < 45 ? 'var(--red)' : 'var(--orange)') + '">' + sc.toFixed(0) + '</div><span class="sc-trend ' + tr + '">' + (tr === 'up' ? '↑ Bullish' : tr === 'down' ? '↓ Bearish' : '→ Neutral') + '</span></div>';
   }).join('');
-  document.getElementById('sent-bullish').textContent = (tb / cats.length).toFixed(0) + '%'; document.getElementById('sent-neutral').textContent = (tn / cats.length).toFixed(0) + '%'; document.getElementById('sent-bearish').textContent = (tbe / cats.length).toFixed(0) + '%';
+  document.getElementById('sent-bullish').textContent = (tb / nCat).toFixed(0) + '%'; document.getElementById('sent-neutral').textContent = (tn / nCat).toFixed(0) + '%'; document.getElementById('sent-bearish').textContent = (tbe / nCat).toFixed(0) + '%';
   document.getElementById('sent-updated').textContent = 'Updated ' + new Date().toLocaleTimeString() + (fg ? ' · F&G LIVE' : ' · F&G offline');
 }
 
@@ -1159,7 +1182,8 @@ function initIndicatorChart() {
   if (typeof LightweightCharts === 'undefined') return;
   const wrap = document.getElementById('indicator-chart'); if (!wrap) return;
   try {
-    STATE.indicatorChart = LightweightCharts.createChart(wrap, {layout:{background:{type:'solid',color:'#0a0e17'},textColor:'#64748b'},grid:{vertLines:{color:'#1a2332'},horzLines:{color:'#1a2332'}},rightPriceScale:{borderColor:'#1e3a5f',scaleMargins:{top:0.1,bottom:0.1}},timeScale:{borderColor:'#1e3a5f',timeVisible:true,secondsVisible:false},width:wrap.clientWidth||600,height:120});
+    const cc = chartColors();
+    STATE.indicatorChart = LightweightCharts.createChart(wrap, {layout:{background:{type:'solid',color:cc.bg},textColor:cc.text},grid:{vertLines:{color:cc.grid},horzLines:{color:cc.grid}},rightPriceScale:{borderColor:cc.border,scaleMargins:{top:0.1,bottom:0.1}},timeScale:{borderColor:cc.border,timeVisible:true,secondsVisible:false},width:wrap.clientWidth||600,height:120});
     STATE.rsiSeries = STATE.indicatorChart.addLineSeries({color:'#a855f7',lineWidth:1,lastValueVisible:false,priceFormat:{type:'price',precision:1,minMove:0.1}});
     window.addEventListener('resize', () => { if (STATE.indicatorChart) STATE.indicatorChart.resize(wrap.clientWidth||600, 120); });
     updateIndicators();
@@ -1222,7 +1246,9 @@ function toggleTheme() {
   saveState();
   const btn = document.getElementById('theme-btn');
   if (btn) btn.textContent = isDark ? '☀️' : '🌙';
-  if (STATE.chart) STATE.chart.applyOptions({layout:{background:{type:'solid',color:isDark?'#ffffff':'#0a0e17'},textColor:isDark?'#475569':'#64748b'}});
+  const cc = chartColors();
+  if (STATE.chart) STATE.chart.applyOptions({layout:{background:{type:'solid',color:cc.bg},textColor:cc.text},grid:{vertLines:{color:cc.grid},horzLines:{color:cc.grid}},rightPriceScale:{borderColor:cc.border},timeScale:{borderColor:cc.border}});
+  if (STATE.indicatorChart) STATE.indicatorChart.applyOptions({layout:{background:{type:'solid',color:cc.bg},textColor:cc.text},grid:{vertLines:{color:cc.grid},horzLines:{color:cc.grid}},rightPriceScale:{borderColor:cc.border},timeScale:{borderColor:cc.border}});
 }
 
 // ===== ENHANCED PORTFOLIO =====

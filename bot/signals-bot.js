@@ -3,8 +3,14 @@ const { Candle, analyze } = require('./ta');
 const rugcheck = require('./rugcheck');
 const { sendTelegram, sendDiscord } = require('./broadcast');
 const paper = require('./paper');
+const fs = require('fs');
+const path = require('path');
 
-const state = { lastSent: {}, running: false };
+const SENT_FILE = path.join(__dirname, 'signals-state.json');
+function loadSent() { try { return JSON.parse(fs.readFileSync(SENT_FILE, 'utf8')); } catch { return {}; } }
+function saveSent() { try { fs.writeFileSync(SENT_FILE, JSON.stringify(state.lastSent)); } catch (e) { console.error('[signals] persist failed:', e.message); } }
+
+const state = { lastSent: loadSent(), running: false };
 
 async function fetchJSON(url, timeout = 10000) {
   const res = await fetch(url, { signal: AbortSignal.timeout(timeout) });
@@ -12,10 +18,17 @@ async function fetchJSON(url, timeout = 10000) {
   return res.json();
 }
 
+const KLINE_HOSTS = ['https://api.binance.com', 'https://data-api.binance.vision'];
 async function fetchKlines(symbol) {
   const { interval, limit } = cfg.watch;
-  const data = await fetchJSON(`https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
-  return data.map(k => new Candle(k));
+  let lastErr;
+  for (const host of KLINE_HOSTS) {
+    try {
+      const data = await fetchJSON(`${host}/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
+      return data.map(k => new Candle(k));
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr;
 }
 
 async function fetchMemePairs() {
@@ -43,7 +56,7 @@ function memeSignal(pair) {
   if (spike < 1.8 && Math.abs(chg) < 8) return null;
   const strength = Math.min(95, Math.round(45 + spike * 12 + Math.abs(chg) * 1.2));
   return {
-    symbol: pair.baseToken?.symbol || '?', mint: pair.baseToken?.address, pair,
+    symbol: (pair.baseToken?.symbol || '?').toUpperCase().replace(/^\$/, ''), mint: pair.baseToken?.address, pair,
     side: chg >= 0 ? 'buy' : 'sell', strength,
     price: parseFloat(pair.priceUsd) || 0,
     text: `${pair.baseToken?.symbol}: ${chg >= 0 ? '+' : ''}${chg.toFixed(1)}% 24h, 6h volume ${spike.toFixed(1)}x pace, liq $${Math.round(liq).toLocaleString()}`
@@ -82,6 +95,7 @@ async function runOnce(dryRun) {
   const paperSum = await paper.tick(signals).catch(e => { console.error('[paper] tick failed:', e.message); return null; });
   const digest = buildDigest(fresh.slice(0, cfg.digestMaxSignals), paperSum);
   fresh.slice(0, cfg.digestMaxSignals).forEach(s => { state.lastSent[s.symbol + s.code] = now; });
+  saveSent();
   return { digest, sent: fresh.length, paper: paperSum };
 }
 

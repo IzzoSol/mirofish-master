@@ -34,6 +34,11 @@ Private master repo holding the improved **MiroFish terminal (v7.0 PRO)** and th
 - **Swarm consensus log** — real consensus snapshots persisted to `mf_swarm` every 30 min, rendered as the history bars (was random)
 - **Solana adapter** — switched Jupiter→DexScreener: real 24h change + token images (change was `Math.random()`)
 - **Alerts fixed** — market selector is now populated (was empty, so alerts could never be created); alerts store market IDs, not fragile indexes
+- **Data-driven sentiment factor** — the per-market sentiment feeding signal confidence + the Sentinel agent is now derived from live 24h change + volume turnover (was the last `Math.random()` in the signal path)
+- **Signal cards chart** — clicking a signal card jumps to Markets and charts it (was a dead toast)
+- **Adaptive chart precision** — memecoin prices (0.00000x) render correctly instead of rounding to 0.0
+- **Theme-aware charts** — main + RSI charts restyle on light/dark toggle (were hardcoded dark)
+- **Sentiment panel** — hides sources disabled in Settings instead of showing random fallbacks
 
 ## Bot v2 changes (vs ZA-zerox-autotrader)
 
@@ -43,6 +48,7 @@ Private master repo holding the improved **MiroFish terminal (v7.0 PRO)** and th
 - `paper.js` — persistent paper desk trading the ZA strategy on live signals: 4% SL, trail arms at +12% ROI, exits 6% off the high-water mark (armed-state bug caught and fixed by self-test), $5/trade cap, $25/day cap, max 5 concurrent; P&L footer in every digest
 - `engine.js` — original ZA strategy (4% SL / 12% trail / 6% gap / 2% size) with the risk config **actually wired**: 15% drawdown circuit breaker, $25 daily cap, $5 per-trade cap, 20-trade daily limit
 - `npm test` — `node ta.js && node paper.js` self-tests; `npm run dry` for a no-keys dry cycle
+- **Persistence + robustness** — signal cooldowns survive restarts (`signals-state.json`), Binance calls fall back to `data-api.binance.vision` on geo-block, batch price URLs properly encoded, DexScreener symbols normalized (`$WIF`/`Bonk` → `WIF`/`BONK`) so paper positions always mark, slippage applied on paper entries/exits
 
 ## Cross-links
 

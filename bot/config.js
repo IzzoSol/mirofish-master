@@ -6,7 +6,8 @@ module.exports = {
     positionSizePct: 2,
     initialCapital: 200,
     maxPerTradeUsd: 5,
-    simulateSlippage: 0.003
+    simulateSlippage: 0.003,
+    medianWinnerRoi: 48.7
   },
   risk: {
     maxDrawdownPct: 15,
